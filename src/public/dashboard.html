@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dashboard - WhatsApp Bot API</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>WhatsApp Bot API</h1>
+      <div class="topbar-actions">
+        <span id="botStatus" class="badge">…</span>
+        <button id="logoutBtn" class="ghost">Logout</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h2>Status & QR</h2>
+        <p>Status: <strong id="statusText">…</strong></p>
+        <p>User: <span id="userText">-</span></p>
+        <div id="qrWrap" class="qr"></div>
+        <button id="logoutBotBtn" class="danger">Logout Bot WhatsApp</button>
+      </section>
+
+      <section class="card">
+        <h2>Statistik</h2>
+        <ul id="stats" class="stats"></ul>
+      </section>
+
+      <section class="card wide">
+        <h2>API Keys</h2>
+        <form id="newKeyForm" class="row">
+          <input name="name" placeholder="Nama (mis. App Mobile)" required />
+          <input name="rateLimit" type="number" placeholder="Rate/menit" value="60" min="1" />
+          <button type="submit">Buat Key</button>
+        </form>
+        <table>
+          <thead>
+            <tr>
+              <th>Nama</th>
+              <th>Key</th>
+              <th>Rate</th>
+              <th>Aktif</th>
+              <th>Last Used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card wide">
+        <h2>Auto-Reply</h2>
+        <form id="newRuleForm" class="row">
+          <input name="pattern" placeholder="Kata kunci / regex" required />
+          <input name="response" placeholder="Balasan" required />
+          <select name="matchType">
+            <option value="contains">contains</option>
+            <option value="exact">exact</option>
+            <option value="startsWith">startsWith</option>
+            <option value="regex">regex</option>
+          </select>
+          <button type="submit">Tambah</button>
+        </form>
+        <table>
+          <thead>
+            <tr>
+              <th>Pattern</th>
+              <th>Match</th>
+              <th>Response</th>
+              <th>Aktif</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rulesBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card wide">
+        <h2>Log Pesan Terbaru</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Waktu</th>
+              <th>Arah</th>
+              <th>JID</th>
+              <th>Tipe</th>
+              <th>Status</th>
+              <th>Pesan</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

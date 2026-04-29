@@ -1,0 +1,23 @@
+{
+  "name": "whatsapp-bot-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsApp bot (Baileys) + Vercel REST API gateway via shared Postgres.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "migrate": "node packages/db/migrate.js",
+    "bot:start": "npm --workspace @whatsapp-bot-api/bot run start",
+    "bot:dev": "npm --workspace @whatsapp-bot-api/bot run dev",
+    "bot:lint": "npm --workspace @whatsapp-bot-api/bot run lint"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

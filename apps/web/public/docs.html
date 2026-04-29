@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>API Docs · WhatsApp Bot API</title>
+<style>
+  :root { --bg: #0e1117; --surface: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --primary: #25d366; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+  header a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+  header a:hover { color: var(--primary); }
+  h1 { font-size: 2rem; margin: 1rem 0; }
+  h2 { font-size: 1.5rem; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; color: var(--primary); font-family: ui-monospace, monospace; }
+  p { color: var(--muted); margin-bottom: 1rem; }
+  pre { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+  p code, td code { background: var(--surface); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--primary); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { padding: 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--surface); }
+  .method { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-right: 0.5rem; }
+  .method.get { background: #2d4f5e; color: #79c0ff; }
+  .method.post { background: #1e4222; color: var(--primary); }
+  .alert { background: rgba(240, 136, 62, 0.1); border-left: 3px solid #f0883e; padding: 1rem; border-radius: 4px; margin: 1rem 0; }
+  .alert p { color: var(--text); margin: 0; }
+  ul { margin-left: 1.5rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container">
+<header><a href="/">&larr; Beranda</a></header>
+<h1>📖 API Documentation</h1>
+<p>REST API gateway hosted on Vercel. Worker bot WhatsApp jalan terpisah (Pterodactyl/VPS) dan komunikasi via Postgres.</p>
+
+<div class="alert">
+  <p><strong>Otentikasi:</strong> setiap endpoint <code>/api/messages/*</code> butuh header <code>x-api-key: wba_xxxxxxxx</code>. API key dibuat dari dashboard bot (login admin).</p>
+</div>
+
+<h2>Base URL</h2>
+<pre><code>https://YOUR-PROJECT.vercel.app</code></pre>
+
+<h2>Authentication</h2>
+<p>Kirim API key di header <code>x-api-key</code> (atau query <code>?apikey=...</code> untuk debugging):</p>
+<pre><code>curl -H "x-api-key: wba_xxxxxxxxxxxxxxxx" https://YOUR-PROJECT.vercel.app/api/health</code></pre>
+
+<h2>Public Endpoints</h2>
+
+<h3><span class="method get">GET</span> /api/health</h3>
+<p>Health check Vercel function. Tidak perlu auth.</p>
+<pre><code>{"ok": true, "service": "whatsapp-bot-api-web", "ts": 1730212345678}</code></pre>
+
+<h3><span class="method get">GET</span> /api/status</h3>
+<p>Status koneksi bot (dibaca dari Postgres, tidak perlu auth).</p>
+<pre><code>{
+  "bot": "connected",
+  "connected": true,
+  "user": {"jid": "6281234567890@s.whatsapp.net", "name": "WinaBot"},
+  "updated_at": "2026-04-29T02:00:00Z"
+}</code></pre>
+
+<h2>Messaging Endpoints</h2>
+
+<h3><span class="method post">POST</span> /api/messages/send-text</h3>
+<p>Kirim pesan teks. Sinkron — function akan menunggu sampai bot benar-benar mengirim (max 8 detik), atau balik 202 kalau timeout.</p>
+<table>
+<tr><th>Body</th><th>Type</th><th>Required</th><th>Note</th></tr>
+<tr><td><code>to</code></td><td>string</td><td>✓</td><td>Nomor (62...) atau JID lengkap</td></tr>
+<tr><td><code>message</code></td><td>string</td><td>✓</td><td>Isi pesan</td></tr>
+</table>
+<pre><code>curl -X POST https://YOUR-PROJECT.vercel.app/api/messages/send-text \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: wba_xxxx" \
+  -d '{"to": "6281234567890", "message": "Halo!"}'
+
+# 200 OK
+{"ok": true, "message_id": 42, "status": "sent", "to": "6281234567890@s.whatsapp.net"}</code></pre>
+
+<h3><span class="method post">POST</span> /api/messages/send-image</h3>
+<p>Kirim gambar dari URL.</p>
+<table>
+<tr><th>Body</th><th>Type</th><th>Required</th></tr>
+<tr><td><code>to</code></td><td>string</td><td>✓</td></tr>
+<tr><td><code>url</code></td><td>string</td><td>✓</td></tr>
+<tr><td><code>caption</code></td><td>string</td><td>—</td></tr>
+</table>
+
+<h3><span class="method post">POST</span> /api/messages/send-document</h3>
+<p>Kirim dokumen dari URL.</p>
+<table>
+<tr><th>Body</th><th>Type</th><th>Required</th></tr>
+<tr><td><code>to</code></td><td>string</td><td>✓</td></tr>
+<tr><td><code>url</code></td><td>string</td><td>✓</td></tr>
+<tr><td><code>filename</code></td><td>string</td><td>—</td></tr>
+<tr><td><code>mimetype</code></td><td>string</td><td>—</td></tr>
+</table>
+
+<h3><span class="method post">POST</span> /api/messages/broadcast</h3>
+<p>Kirim ke banyak penerima sekaligus. Asynchronous — return 202 segera, bot akan proses di background.</p>
+<pre><code>curl -X POST https://YOUR-PROJECT.vercel.app/api/messages/broadcast \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: wba_xxxx" \
+  -d '{
+    "to": ["6281111", "6282222", "6283333"],
+    "message": "Halo semua!"
+  }'
+
+# 202 Accepted
+{
+  "accepted": true,
+  "queued_count": 3,
+  "skipped_count": 0,
+  "queued": [
+    {"to": "6281111@s.whatsapp.net", "message_id": 100},
+    {"to": "6282222@s.whatsapp.net", "message_id": 101},
+    {"to": "6283333@s.whatsapp.net", "message_id": 102}
+  ]
+}</code></pre>
+
+<h3><span class="method get">GET</span> /api/messages/:id</h3>
+<p>Cek status delivery satu pesan.</p>
+<pre><code>curl -H "x-api-key: wba_xxxx" https://YOUR-PROJECT.vercel.app/api/messages/42
+
+{
+  "id": 42, "jid": "6281234567890@s.whatsapp.net", "type": "text",
+  "status": "sent", "error": null,
+  "created_at": "...", "processed_at": "..."
+}</code></pre>
+
+<h2>Status Codes</h2>
+<table>
+<tr><th>Code</th><th>Arti</th></tr>
+<tr><td>200</td><td>Sukses, pesan terkirim</td></tr>
+<tr><td>202</td><td>Diterima, masih di-queue / di-proses</td></tr>
+<tr><td>400</td><td>Body tidak valid</td></tr>
+<tr><td>401</td><td>API key tidak ada / invalid</td></tr>
+<tr><td>403</td><td>API key disabled</td></tr>
+<tr><td>404</td><td>Resource tidak ditemukan</td></tr>
+<tr><td>429</td><td>Rate limit terlampaui</td></tr>
+<tr><td>502</td><td>Bot gagal kirim (mis. nomor invalid)</td></tr>
+<tr><td>503</td><td>Bot tidak terkoneksi WhatsApp</td></tr>
+</table>
+
+<h2>Rate Limits</h2>
+<p>Per API key, default 60 request/menit (bisa diatur per-key dari dashboard bot). Saat over-limit, response 429.</p>
+</div>
+</body>
+</html>

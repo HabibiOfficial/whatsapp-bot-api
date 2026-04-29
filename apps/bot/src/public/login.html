@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Login - WhatsApp Bot API</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="login">
+    <main class="card">
+      <h1>WhatsApp Bot API</h1>
+      <p class="muted">Masuk ke dashboard admin</p>
+      <form id="loginForm">
+        <label>
+          Username
+          <input name="username" autocomplete="username" required />
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Masuk</button>
+        <p id="err" class="error"></p>
+      </form>
+    </main>
+    <script>
+      const form = document.getElementById('loginForm');
+      const err = document.getElementById('err');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        err.textContent = '';
+        const data = Object.fromEntries(new FormData(form));
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j.error || 'Login gagal');
+          }
+          location.href = '/dashboard';
+        } catch (ex) {
+          err.textContent = ex.message;
+        }
+      });
+    </script>
+  </body>
+</html>

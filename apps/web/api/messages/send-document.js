@@ -4,6 +4,7 @@ const { json, method, readBody } = require('../_lib/respond');
 const { authenticate } = require('../_lib/auth');
 const { enqueueAndWait, getBotStatus } = require('../_lib/queue');
 const { normalizeJid } = require('../_lib/jid');
+const { validateExternalUrl } = require('../_lib/url-validate');
 
 module.exports = async (req, res) => {
   if (!method(req, res, ['POST'])) return;
@@ -15,6 +16,8 @@ module.exports = async (req, res) => {
   const jid = normalizeJid(body.to || body.jid);
   if (!jid) return json(res, 400, { error: 'invalid `to`' });
   if (!body.url) return json(res, 400, { error: '`url` required' });
+  const v = validateExternalUrl(body.url);
+  if (!v.ok) return json(res, 400, { error: `url: ${v.error}` });
 
   const status = await getBotStatus();
   if (status.status !== 'connected') {

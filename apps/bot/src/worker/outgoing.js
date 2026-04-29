@@ -8,18 +8,25 @@
  * On success we mark 'sent' and write a corresponding row in message_logs.
  */
 
-const axios = require('axios');
 const config = require('../config');
 const logger = require('../logger');
 const db = require('../db');
 const bot = require('../bot');
+const { safeFetchBuffer } = require('./safe-fetch');
+
+const STALE_PROCESSING_MINUTES = 5;
+const RECOVERY_INTERVAL_MS = 60_000;
 
 let timer = null;
+let recoveryTimer = null;
 let running = false;
+let activeTick = null;
 
 async function tick() {
   if (running) return;
   running = true;
+  let resolveActive;
+  activeTick = new Promise((r) => { resolveActive = r; });
   try {
     const sock = bot.getSocket();
     const state = bot.getState();
@@ -70,6 +77,8 @@ async function tick() {
     logger.error({ err: err.message }, 'worker tick error');
   } finally {
     running = false;
+    if (resolveActive) resolveActive();
+    activeTick = null;
   }
 }
 
@@ -110,22 +119,52 @@ async function sendOne(sock, row) {
 }
 
 async function fetchBuffer(url) {
-  const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
-  return Buffer.from(res.data);
+  return safeFetchBuffer(url);
+}
+
+/**
+ * Reclaim rows that were claimed (status='processing') by a previous worker
+ * instance that died before completing. Runs at startup and periodically.
+ */
+async function recoverStaleProcessing() {
+  try {
+    const r = await db.query(
+      `UPDATE outgoing_messages
+         SET status = 'pending', processed_at = NULL
+       WHERE status = 'processing'
+         AND processed_at < NOW() - ($1::text || ' minutes')::interval
+       RETURNING id`,
+      [String(STALE_PROCESSING_MINUTES)],
+    );
+    if (r.rows.length > 0) {
+      logger.warn({ count: r.rows.length }, 'recovered stale processing rows');
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'recovery query failed');
+  }
 }
 
 function start() {
   if (timer) return;
+  recoverStaleProcessing().catch(() => {});
   timer = setInterval(() => {
     tick().catch((err) => logger.error({ err: err.message }, 'tick threw'));
   }, config.workerPollMs);
+  recoveryTimer = setInterval(() => {
+    recoverStaleProcessing().catch(() => {});
+  }, RECOVERY_INTERVAL_MS);
   logger.info({ pollMs: config.workerPollMs, batch: config.workerBatch }, 'worker started');
 }
 
-function stop() {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
+async function stop() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (recoveryTimer) { clearInterval(recoveryTimer); recoveryTimer = null; }
+  if (activeTick) {
+    logger.info('waiting for in-flight tick to finish');
+    await Promise.race([
+      activeTick,
+      new Promise((res) => setTimeout(res, 10_000)),
+    ]);
   }
 }
 

@@ -16,5 +16,11 @@ main().catch((err) => {
   process.exit(1);
 });
 
-process.on('SIGINT', () => { worker.stop(); process.exit(0); });
-process.on('SIGTERM', () => { worker.stop(); process.exit(0); });
+async function shutdown(signal) {
+  logger.info({ signal }, 'shutting down');
+  try { await worker.stop(); } catch { /* noop */ }
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

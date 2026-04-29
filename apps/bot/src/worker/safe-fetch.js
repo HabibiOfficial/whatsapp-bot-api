@@ -3,13 +3,18 @@
 /**
  * SSRF-safe URL fetcher.
  *
- * Rejects non-http(s) schemes, then DNS-resolves the hostname and rejects any
- * address that lies in a private/loopback/link-local/CGNAT range. Network call
- * uses axios.get with a small timeout and bounded response size.
+ * Resolves the hostname once, validates every returned address against a
+ * private/loopback/CGNAT/link-local denylist, then forces axios to connect to
+ * exactly that pre-validated address (via a per-request agent.lookup) so a
+ * subsequent DNS lookup cannot rebind to an internal IP. Also caps response
+ * size, disables redirects (which would re-introduce the rebind risk), and
+ * uses a bounded timeout.
  */
 
 const dns = require('dns').promises;
 const net = require('net');
+const http = require('http');
+const https = require('https');
 const axios = require('axios');
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB hard cap
@@ -67,6 +72,26 @@ function isPrivateAddress(addr) {
   return true; // unknown -> deny
 }
 
+async function resolveAndValidate(host) {
+  let addrs;
+  if (net.isIP(host)) {
+    addrs = [{ address: host, family: net.isIPv6(host) ? 6 : 4 }];
+  } else {
+    try {
+      addrs = await dns.lookup(host, { all: true });
+    } catch {
+      throw new Error(`dns resolution failed for ${host}`);
+    }
+  }
+  if (!addrs || addrs.length === 0) throw new Error('no addresses resolved');
+  for (const a of addrs) {
+    if (isPrivateAddress(a.address)) {
+      throw new Error(`refusing private/internal address: ${a.address}`);
+    }
+  }
+  return addrs[0]; // pin to first validated address
+}
+
 async function assertSafeUrl(rawUrl) {
   let parsed;
   try {
@@ -80,40 +105,49 @@ async function assertSafeUrl(rawUrl) {
   if (parsed.username || parsed.password) {
     throw new Error('credentials in url not allowed');
   }
-  const host = parsed.hostname;
-  if (!host) throw new Error('missing host');
+  if (!parsed.hostname) throw new Error('missing host');
+  return { parsed, pinned: await resolveAndValidate(parsed.hostname) };
+}
 
-  // If hostname is a literal IP, validate directly. Otherwise resolve A/AAAA.
-  let addrs = [];
-  if (net.isIP(host)) {
-    addrs = [host];
-  } else {
-    try {
-      const r = await dns.lookup(host, { all: true });
-      addrs = r.map((x) => x.address);
-    } catch {
-      throw new Error(`dns resolution failed for ${host}`);
+function buildPinnedAgent(parsed, pinned) {
+  // Custom lookup ignores hostname and always returns the pre-validated IP.
+  // Handle both callback signatures: when options.all is true, callback wants
+  // an array of {address, family}; otherwise the (address, family) form.
+  const lookup = (_hostname, opts, cb) => {
+    const callback = typeof opts === 'function' ? opts : cb;
+    const options = typeof opts === 'function' ? {} : opts || {};
+    if (options.all) {
+      callback(null, [{ address: pinned.address, family: pinned.family }]);
+    } else {
+      callback(null, pinned.address, pinned.family);
     }
+  };
+  if (parsed.protocol === 'https:') {
+    return new https.Agent({ keepAlive: false, lookup });
   }
-  if (addrs.length === 0) throw new Error('no addresses resolved');
-  for (const a of addrs) {
-    if (isPrivateAddress(a)) {
-      throw new Error(`refusing private/internal address: ${a}`);
-    }
-  }
+  return new http.Agent({ keepAlive: false, lookup });
 }
 
 async function safeFetchBuffer(url) {
-  await assertSafeUrl(url);
-  const res = await axios.get(url, {
-    responseType: 'arraybuffer',
-    timeout: TIMEOUT_MS,
-    maxContentLength: MAX_BYTES,
-    maxBodyLength: MAX_BYTES,
-    maxRedirects: 0, // any redirect would re-introduce SSRF risk; rely on direct URL only
-    validateStatus: (s) => s >= 200 && s < 300,
-  });
-  return Buffer.from(res.data);
+  const { parsed, pinned } = await assertSafeUrl(url);
+  const agent = buildPinnedAgent(parsed, pinned);
+  try {
+    const res = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: TIMEOUT_MS,
+      maxContentLength: MAX_BYTES,
+      maxBodyLength: MAX_BYTES,
+      maxRedirects: 0,
+      validateStatus: (s) => s >= 200 && s < 300,
+      httpAgent: agent,
+      httpsAgent: agent,
+      // SNI/Host header still uses the original hostname; the pinned IP is
+      // applied at the socket layer via the agent's `lookup`.
+    });
+    return Buffer.from(res.data);
+  } finally {
+    agent.destroy();
+  }
 }
 
 module.exports = { safeFetchBuffer, assertSafeUrl, isPrivateAddress };

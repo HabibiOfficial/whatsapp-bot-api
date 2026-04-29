@@ -27,10 +27,16 @@ async function refreshStatus() {
   badge.className = `badge ${s.status}`;
 
   const qr = $('qrWrap');
-  qr.innerHTML = s.qrDataUrl ? `<img src="${s.qrDataUrl}" alt="QR" />` : '';
+  qr.innerHTML = '';
+  if (s.qrDataUrl && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(s.qrDataUrl)) {
+    const img = document.createElement('img');
+    img.src = s.qrDataUrl;
+    img.alt = 'QR';
+    qr.appendChild(img);
+  }
 
   $('stats').innerHTML = Object.entries(s.stats || {})
-    .map(([k, v]) => `<li><span>${k.replace(/_/g, ' ')}</span><strong>${v}</strong></li>`)
+    .map(([k, v]) => `<li><span>${escapeHtml(k.replace(/_/g, ' '))}</span><strong>${escapeHtml(v)}</strong></li>`)
     .join('');
 }
 
@@ -41,13 +47,13 @@ async function refreshKeys() {
       (k) => `
       <tr>
         <td>${escapeHtml(k.name)}</td>
-        <td><code>${k.key}</code></td>
-        <td>${k.rate_limit}/min</td>
+        <td><code>${escapeHtml(k.key)}</code></td>
+        <td>${escapeHtml(k.rate_limit)}/min</td>
         <td>
-          <input type="checkbox" data-toggle-key="${k.id}" ${k.enabled ? 'checked' : ''} />
+          <input type="checkbox" data-toggle-key="${escapeHtml(k.id)}" ${k.enabled ? 'checked' : ''} />
         </td>
-        <td>${k.last_used_at || '-'}</td>
-        <td><button class="ghost" data-del-key="${k.id}">Hapus</button></td>
+        <td>${escapeHtml(k.last_used_at || '-')}</td>
+        <td><button class="ghost" data-del-key="${escapeHtml(k.id)}">Hapus</button></td>
       </tr>`,
     )
     .join('');
@@ -60,10 +66,10 @@ async function refreshRules() {
       (r) => `
       <tr>
         <td>${escapeHtml(r.pattern)}</td>
-        <td>${r.match_type}</td>
+        <td>${escapeHtml(r.match_type)}</td>
         <td>${escapeHtml(r.response)}</td>
-        <td><input type="checkbox" data-toggle-rule="${r.id}" ${r.enabled ? 'checked' : ''} /></td>
-        <td><button class="ghost" data-del-rule="${r.id}">Hapus</button></td>
+        <td><input type="checkbox" data-toggle-rule="${escapeHtml(r.id)}" ${r.enabled ? 'checked' : ''} /></td>
+        <td><button class="ghost" data-del-rule="${escapeHtml(r.id)}">Hapus</button></td>
       </tr>`,
     )
     .join('');
@@ -75,11 +81,11 @@ async function refreshLogs() {
     .map(
       (l) => `
       <tr>
-        <td>${l.created_at}</td>
-        <td>${l.direction}</td>
-        <td><code>${l.jid}</code></td>
-        <td>${l.type || ''}</td>
-        <td>${l.status}${l.error ? ` (${escapeHtml(l.error)})` : ''}</td>
+        <td>${escapeHtml(l.created_at)}</td>
+        <td>${escapeHtml(l.direction)}</td>
+        <td><code>${escapeHtml(l.jid)}</code></td>
+        <td>${escapeHtml(l.type || '')}</td>
+        <td>${escapeHtml(l.status)}${l.error ? ` (${escapeHtml(l.error)})` : ''}</td>
         <td>${escapeHtml((l.message || '').slice(0, 80))}</td>
       </tr>`,
     )

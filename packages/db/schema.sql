@@ -66,3 +66,15 @@ CREATE TABLE IF NOT EXISTS bot_state (
 
 INSERT INTO bot_state (id, status) VALUES (1, 'disconnected')
   ON CONFLICT (id) DO NOTHING;
+
+-- Fixed-window rate limiting counters. One row per (api_key_id, minute bucket).
+-- Vercel-side authenticate() does an UPSERT and rejects when count > rate_limit.
+CREATE TABLE IF NOT EXISTS rate_limit_counters (
+  api_key_id   BIGINT      NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  window_start TIMESTAMPTZ NOT NULL,
+  count        INT         NOT NULL DEFAULT 0,
+  PRIMARY KEY (api_key_id, window_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_window
+  ON rate_limit_counters (window_start);

@@ -2,8 +2,11 @@
 
 const db = require('./db');
 
-const buckets = new Map(); // api_key_id -> { count, windowStart }
-
+/**
+ * Authenticate a request via `x-api-key` header (or `?apikey=` query param)
+ * and apply a fixed 1-minute rate-limit window backed by Postgres so it works
+ * across cold starts and concurrent serverless containers.
+ */
 async function authenticate(req) {
   const key = req.headers['x-api-key'] || (req.query && req.query.apikey);
   if (!key) return { error: { status: 401, message: 'missing api key' } };
@@ -16,7 +19,7 @@ async function authenticate(req) {
   const apiKey = r.rows[0];
   if (!apiKey.enabled) return { error: { status: 403, message: 'api key disabled' } };
 
-  const limited = checkRate(apiKey);
+  const limited = await checkRate(apiKey);
   if (limited) {
     return {
       error: {
@@ -32,16 +35,23 @@ async function authenticate(req) {
   return { apiKey };
 }
 
-function checkRate(apiKey) {
-  const now = Date.now();
-  const bucket = buckets.get(apiKey.id) || { count: 0, windowStart: now };
-  if (now - bucket.windowStart >= 60000) {
-    bucket.count = 0;
-    bucket.windowStart = now;
-  }
-  bucket.count += 1;
-  buckets.set(apiKey.id, bucket);
-  return bucket.count > apiKey.rate_limit;
+/**
+ * Atomic UPSERT against rate_limit_counters keyed by (api_key_id, current
+ * minute). Returns true when the resulting count exceeds the per-key limit.
+ * The minute bucket is computed via date_trunc on the DB side so all
+ * containers agree on window boundaries regardless of clock skew.
+ */
+async function checkRate(apiKey) {
+  const r = await db.query(
+    `INSERT INTO rate_limit_counters (api_key_id, window_start, count)
+       VALUES ($1, date_trunc('minute', NOW()), 1)
+     ON CONFLICT (api_key_id, window_start)
+       DO UPDATE SET count = rate_limit_counters.count + 1
+     RETURNING count`,
+    [apiKey.id],
+  );
+  const count = r.rows[0]?.count ?? 1;
+  return count > apiKey.rate_limit;
 }
 
 module.exports = { authenticate };

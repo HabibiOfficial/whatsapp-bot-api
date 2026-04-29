@@ -55,6 +55,50 @@ function inV4Cidr(ip, base, bits) {
   return (ipi & mask) === (bsi & mask);
 }
 
+/**
+ * Try to extract an IPv4 dotted-decimal address embedded in an IPv6 string.
+ * Handles ::ffff:1.2.3.4, ::ffff:7f00:1, 0:0:0:0:0:ffff:7f00:1, and any other
+ * fully-expanded form whose last two 16-bit groups represent the IPv4 octets.
+ * Returns null when the address has no embedded IPv4 mapping.
+ */
+function extractMappedIPv4(addr6) {
+  // Expand `::` so we always have 8 groups. A trailing dotted-quad counts as
+  // two 16-bit groups (it represents the low 32 bits).
+  function dottedExpands(parts) {
+    return parts.length > 0 && parts[parts.length - 1].includes('.') ? 1 : 0;
+  }
+  let groups;
+  if (addr6.includes('::')) {
+    const [head, tail] = addr6.split('::');
+    const headParts = head ? head.split(':') : [];
+    const tailParts = tail ? tail.split(':') : [];
+    const tailWeight = tailParts.length + dottedExpands(tailParts);
+    const missing = 8 - headParts.length - tailWeight;
+    if (missing < 0) return null;
+    groups = [...headParts, ...new Array(missing).fill('0'), ...tailParts];
+  } else {
+    groups = addr6.split(':');
+  }
+
+  if (groups.length === 7 && groups[6].includes('.')) {
+    // Already in mixed dotted-quad form like 0:0:0:0:0:ffff:1.2.3.4
+    if (groups.slice(0, 5).every((g) => parseInt(g, 16) === 0) &&
+        parseInt(groups[5], 16) === 0xffff &&
+        net.isIPv4(groups[6])) {
+      return groups[6];
+    }
+    return null;
+  }
+  if (groups.length !== 8) return null;
+  // Verify ::ffff: prefix shape.
+  if (!groups.slice(0, 5).every((g) => parseInt(g, 16) === 0)) return null;
+  if (parseInt(groups[5], 16) !== 0xffff) return null;
+  const hi = parseInt(groups[6], 16);
+  const lo = parseInt(groups[7], 16);
+  if (Number.isNaN(hi) || Number.isNaN(lo)) return null;
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+}
+
 function isPrivateAddress(addr) {
   if (net.isIPv4(addr)) {
     return DENY_V4.some(([base, bits]) => inV4Cidr(addr, base, bits));
@@ -63,24 +107,31 @@ function isPrivateAddress(addr) {
     const lower = addr.toLowerCase();
     if (lower === '::' || lower === '::1') return true;
     if (lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd')) return true;
-    if (lower.startsWith('::ffff:')) {
-      const v4 = lower.slice(7);
-      if (net.isIPv4(v4)) return DENY_V4.some(([b, bits]) => inV4Cidr(v4, b, bits));
+    // Any IPv4-mapped form (::ffff:a.b.c.d, ::ffff:hi:lo, 0:0:0:0:0:ffff:hi:lo).
+    const mapped = extractMappedIPv4(lower);
+    if (mapped) {
+      return DENY_V4.some(([b, bits]) => inV4Cidr(mapped, b, bits));
     }
     return false;
   }
   return true; // unknown -> deny
 }
 
+function stripBrackets(host) {
+  if (host.startsWith('[') && host.endsWith(']')) return host.slice(1, -1);
+  return host;
+}
+
 async function resolveAndValidate(host) {
+  const bare = stripBrackets(host);
   let addrs;
-  if (net.isIP(host)) {
-    addrs = [{ address: host, family: net.isIPv6(host) ? 6 : 4 }];
+  if (net.isIP(bare)) {
+    addrs = [{ address: bare, family: net.isIPv6(bare) ? 6 : 4 }];
   } else {
     try {
-      addrs = await dns.lookup(host, { all: true });
+      addrs = await dns.lookup(bare, { all: true });
     } catch {
-      throw new Error(`dns resolution failed for ${host}`);
+      throw new Error(`dns resolution failed for ${bare}`);
     }
   }
   if (!addrs || addrs.length === 0) throw new Error('no addresses resolved');

@@ -20,12 +20,16 @@ function validateExternalUrl(raw) {
   if (u.username || u.password) {
     return { ok: false, error: 'credentials in url not allowed' };
   }
-  const host = u.hostname.toLowerCase();
+  // Strip IPv6 brackets if present so the checks below see the bare address.
+  let host = u.hostname.toLowerCase();
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+
   if (
     host === 'localhost' ||
     host === '127.0.0.1' ||
     host === '0.0.0.0' ||
     host === '::1' ||
+    host === '::' ||
     host === '169.254.169.254' || // cloud metadata
     host.endsWith('.local') ||
     host.endsWith('.internal')
@@ -35,6 +39,11 @@ function validateExternalUrl(raw) {
   // Catch obvious literal private IPv4 ranges before queueing.
   if (/^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) {
     return { ok: false, error: 'private/internal host not allowed' };
+  }
+  // Reject any IPv4-mapped IPv6 form (dotted, hex, fully-expanded). The
+  // authoritative check happens on the worker; this is just early defense.
+  if (/(:|^)(0+:){0,4}0*ffff(:|$)/i.test(host) || host.includes('::ffff:')) {
+    return { ok: false, error: 'ipv4-mapped ipv6 address not allowed' };
   }
   return { ok: true };
 }

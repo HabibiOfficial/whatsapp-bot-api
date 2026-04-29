@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WhatsApp Bot API</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>" />
+<style>
+  :root {
+    --primary: #25d366;
+    --primary-dark: #128c7e;
+    --bg: #0e1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+  header { padding: 4rem 0 3rem; text-align: center; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+  h1 .emoji { font-size: 2.2rem; }
+  .subtitle { color: var(--muted); font-size: 1.1rem; max-width: 600px; margin: 0 auto; }
+  .pill { display: inline-block; padding: 0.25rem 0.7rem; border-radius: 999px; background: rgba(37, 211, 102, 0.15); color: var(--primary); font-size: 0.85rem; margin-bottom: 1rem; font-weight: 600; }
+  .status-row { display: flex; justify-content: center; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; }
+  .badge { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .badge.connected .dot { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+  .badge.qr .dot { background: #f0883e; }
+  .badge.disconnected .dot { background: #f85149; }
+  section { padding: 3rem 0; border-bottom: 1px solid var(--border); }
+  h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+  p { color: var(--muted); margin-bottom: 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .card h3 { margin-bottom: 0.5rem; font-size: 1.05rem; }
+  .card p { font-size: 0.9rem; }
+  pre { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.5rem; }
+  .btn { display: inline-block; padding: 0.7rem 1.4rem; border-radius: 8px; font-weight: 600; transition: 0.15s; border: 1px solid var(--border); }
+  .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn-primary:hover { background: var(--primary-dark); text-decoration: none; }
+  .btn-secondary { background: transparent; color: var(--text); }
+  .btn-secondary:hover { background: var(--surface); text-decoration: none; }
+  footer { text-align: center; padding: 2rem 0; color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <span class="pill">Beta · Powered by Baileys</span>
+    <h1><span class="emoji">💬</span> WhatsApp Bot API</h1>
+    <p class="subtitle">REST API gateway untuk kirim pesan WhatsApp via API key. Self-host bot-nya, deploy gateway di Vercel.</p>
+    <div class="status-row" id="status">
+      <span class="badge"><span class="dot"></span><span id="bot-status">Memuat status...</span></span>
+    </div>
+    <div class="btn-row" style="justify-content: center;">
+      <a class="btn btn-primary" href="/docs">Baca Dokumentasi</a>
+      <a class="btn btn-secondary" href="https://github.com/HabibiOfficial/whatsapp-bot-api" target="_blank">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="container">
+    <h2>Fitur</h2>
+    <div class="grid">
+      <div class="card"><h3>📤 Send Message</h3><p>Kirim teks, gambar, dokumen ke nomor WhatsApp via REST API.</p></div>
+      <div class="card"><h3>📡 Broadcast</h3><p>Kirim pesan ke banyak penerima sekaligus dengan delay otomatis.</p></div>
+      <div class="card"><h3>🔑 API Key</h3><p>Setiap key punya rate limit sendiri. Kelola dari dashboard bot.</p></div>
+      <div class="card"><h3>📊 Status &amp; Logs</h3><p>Cek status koneksi WA dan riwayat pesan langsung dari API.</p></div>
+      <div class="card"><h3>🤖 Auto-Reply</h3><p>Pattern matching (contains/exact/startsWith/regex) di sisi bot.</p></div>
+      <div class="card"><h3>⚡ Async Worker</h3><p>Vercel queue ke Postgres → bot polling, kirim WA, status sync.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Quick Start</h2>
+    <p>Setelah API key kamu didaftarkan di dashboard bot, kirim pesan WhatsApp sesimpel ini:</p>
+    <pre><code>curl -X POST https://YOUR-PROJECT.vercel.app/api/messages/send-text \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: wba_xxxxxxxxxxxx" \
+  -d '{"to": "6281234567890", "message": "Halo dari API!"}'</code></pre>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/docs">Lihat Semua Endpoint</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>Open source di <a href="https://github.com/HabibiOfficial/whatsapp-bot-api" target="_blank">GitHub</a> · MIT License</p>
+  </div>
+</footer>
+
+<script>
+fetch('/api/status')
+  .then((r) => r.json())
+  .then((d) => {
+    const badge = document.querySelector('#status .badge');
+    const text = document.getElementById('bot-status');
+    const map = {
+      connected: { class: 'connected', label: 'Bot connected' + (d.user?.name ? ' · ' + d.user.name : '') },
+      qr: { class: 'qr', label: 'Bot waiting for QR scan' },
+      connecting: { class: 'qr', label: 'Bot connecting...' },
+      disconnected: { class: 'disconnected', label: 'Bot disconnected' },
+      logged_out: { class: 'disconnected', label: 'Bot logged out' },
+    };
+    const v = map[d.bot] || { class: 'disconnected', label: 'Bot ' + (d.bot || 'unknown') };
+    badge.classList.add(v.class);
+    text.textContent = v.label;
+  })
+  .catch(() => {
+    document.getElementById('bot-status').textContent = 'Status unavailable';
+  });
+</script>
+</body>
+</html>

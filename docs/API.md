@@ -1,70 +1,36 @@
 # REST API Reference
 
-Semua endpoint mengirim/menerima JSON. API key dikirim via header `x-api-key` (preferred) atau query `?apikey=`.
+Sekarang ada **dua kelompok** endpoint:
 
-Base URL: `http://localhost:3000` (atau domain kamu).
-
-## Auth (admin dashboard)
-
-### `POST /api/auth/login`
-
-```json
-{ "username": "admin", "password": "changeme" }
-```
-
-Response: `200` dengan cookie `admin_token` (httpOnly, 7 hari).
-
-### `POST /api/auth/logout`
-
-Hapus cookie session.
-
-### `GET /api/auth/me`
-
-Cek session aktif. `401` kalau belum login.
+| Layer | URL prefix | Auth | Tujuan |
+|-------|-----------|------|--------|
+| **Vercel** (`apps/web`) | `https://YOUR.vercel.app/api/...` | API key | Public REST API untuk kirim pesan WA |
+| **Bot** (`apps/bot`) | `http://YOUR-PTERO-IP:3000/api/...` | admin login (cookie/JWT) | Dashboard admin (kelola key + auto-reply + lihat log) |
 
 ---
 
-## API Keys (admin)
+## Vercel (public REST API)
 
-### `GET /api/keys`
+Auth: header `x-api-key: wba_xxxxxxxxxxxx` (atau `?apikey=wba_...` untuk debug).
+
+### `GET /api/health`
+Health check. Tanpa auth.
+
+```json
+{"ok": true, "service": "whatsapp-bot-api-web", "ts": 1730212345678}
+```
+
+### `GET /api/status`
+Status koneksi bot (dibaca dari Postgres). Tanpa auth.
 
 ```json
 {
-  "keys": [
-    {
-      "id": 1,
-      "name": "Mobile App",
-      "key": "wba_xxxxxxxx",
-      "enabled": 1,
-      "rate_limit": 60,
-      "created_at": "2026-01-01 00:00:00",
-      "last_used_at": "2026-01-01 00:00:00"
-    }
-  ]
+  "bot": "connected",
+  "connected": true,
+  "user": {"jid": "62xxx@s.whatsapp.net", "name": "WinaBot"},
+  "updated_at": "2026-04-29T02:00:00Z"
 }
 ```
-
-### `POST /api/keys`
-
-```json
-{ "name": "Mobile App", "rateLimit": 60 }
-```
-
-Response berisi `key` baru — **simpan, hanya muncul sekali**.
-
-### `PATCH /api/keys/:id/toggle`
-
-```json
-{ "enabled": true }
-```
-
-### `DELETE /api/keys/:id`
-
----
-
-## Messages (butuh API key)
-
-Header: `x-api-key: wba_...`
 
 ### `POST /api/messages/send-text`
 
@@ -72,116 +38,99 @@ Header: `x-api-key: wba_...`
 { "to": "6281234567890", "message": "Halo!" }
 ```
 
+- `200`: pesan terkirim → `{ ok, message_id, status: "sent", to }`
+- `202`: queued, masih di-proses → `{ accepted, message_id, status: "pending" }`
+- `400`: body invalid · `401`: api key invalid · `429`: rate limit · `502`: gagal kirim · `503`: bot disconnected
+
 ### `POST /api/messages/send-image`
 
 ```json
-{
-  "to": "6281234567890",
-  "url": "https://example.com/image.jpg",
-  "caption": "Optional caption"
-}
+{ "to": "62xxx", "url": "https://...", "caption": "halo" }
 ```
 
 ### `POST /api/messages/send-document`
 
 ```json
-{
-  "to": "6281234567890",
-  "url": "https://example.com/file.pdf",
-  "filename": "invoice.pdf",
-  "mimetype": "application/pdf"
-}
+{ "to": "62xxx", "url": "https://...", "filename": "x.pdf", "mimetype": "application/pdf" }
 ```
 
 ### `POST /api/messages/broadcast`
 
 ```json
+{ "to": ["62111", "62222"], "message": "Halo semua!" }
+```
+
+Response `202`:
+```json
 {
-  "recipients": ["6281111111111", "6282222222222"],
-  "message": "Pengumuman!",
-  "delayMs": 1500
+  "accepted": true, "queued_count": 2, "skipped_count": 0,
+  "queued": [{"to": "62111@s.whatsapp.net", "message_id": 100}, ...]
 }
 ```
 
-Response:
+### `GET /api/messages/:id`
+Cek status delivery (auth: api key yang sama dengan yang queue).
 
 ```json
-{
-  "ok": true,
-  "results": [
-    { "to": "6281111111111@s.whatsapp.net", "ok": true },
-    { "to": "6282222222222@s.whatsapp.net", "ok": false, "error": "..." }
-  ]
-}
-```
-
-### `GET /api/messages/check-number?number=6281234567890`
-
-```json
-{ "exists": true, "jid": "6281234567890@s.whatsapp.net" }
+{ "id": 42, "jid": "...", "type": "text", "status": "sent", "error": null, "created_at": "...", "processed_at": "..." }
 ```
 
 ---
 
-## Status
+## Bot dashboard (admin auth)
 
-### `GET /api/health`
+Endpoint ini **hanya dipakai dashboard internal**, bukan untuk client publik. Auth via cookie session yang di-set saat login.
 
-Public healthcheck. Selalu `200 { ok: true, ts: ... }`.
+### `POST /api/auth/login`
+```json
+{ "username": "admin", "password": "changeme" }
+```
+Set cookie `admin_token` (httpOnly, 7 hari).
 
-### `GET /api/status/public`
+### `POST /api/auth/logout`
+Hapus cookie.
 
-Public. `{ status, connected }`.
+### `GET /api/auth/me`
+Cek session aktif.
 
-### `GET /api/status` (admin)
+### API Keys
+- `GET /api/keys` — list semua key
+- `POST /api/keys` body `{ name, rateLimit? }` → response `{ id, name, key, ... }` (key cuma muncul sekali!)
+- `PATCH /api/keys/:id/toggle` body `{ enabled }`
+- `DELETE /api/keys/:id`
 
-Lengkap dengan stats dan info user yang login.
+### Auto-Reply
+- `GET /api/autoreplies`
+- `POST /api/autoreplies` body `{ pattern, response, matchType: "contains"|"exact"|"startsWith"|"regex" }`
+- `PATCH /api/autoreplies/:id/toggle`
+- `DELETE /api/autoreplies/:id`
 
-### `GET /api/status/qr` (admin)
-
-`{ status, qrDataUrl }` — data URL gambar QR, render dengan `<img src="...">`.
-
-### `POST /api/status/logout` (admin)
-
-Logout bot WhatsApp & hapus sesi (perlu scan QR ulang).
-
-### `GET /api/status/logs?limit=50` (admin)
-
-Log pesan terbaru.
+### Status & Logs
+- `GET /api/status/public` — public, tanpa auth: `{ status, connected }`
+- `GET /api/status` — full status + stats
+- `GET /api/status/qr` — `{ qrDataUrl }`
+- `POST /api/status/logout` — wipe Baileys session
+- `GET /api/status/logs?limit=50` — riwayat pesan
 
 ---
 
-## Auto-Reply (admin)
+## Status Codes
 
-### `GET /api/autoreplies`
+| Code | Arti |
+|------|------|
+| 200 | OK |
+| 201 | Created |
+| 202 | Accepted, async processing |
+| 400 | Bad request |
+| 401 | Unauthorized (no/invalid api key atau session) |
+| 403 | Forbidden (key disabled) |
+| 404 | Not found |
+| 429 | Rate limit exceeded |
+| 500 | Internal error |
+| 502 | Bot gagal kirim |
+| 503 | Bot disconnected |
 
-### `POST /api/autoreplies`
+## JID format
 
-```json
-{
-  "pattern": "halo",
-  "response": "Halo juga!",
-  "matchType": "contains"
-}
-```
-
-`matchType`: `contains` (default) | `exact` | `startsWith` | `regex`.
-
-### `PATCH /api/autoreplies/:id/toggle` `{ enabled: true }`
-
-### `DELETE /api/autoreplies/:id`
-
----
-
-## Error format
-
-```json
-{ "error": "human-readable message" }
-```
-
-HTTP status:
-- `400` — validasi gagal
-- `401` — auth gagal (tidak ada / invalid API key / belum login)
-- `429` — rate limit terlampaui
-- `503` — bot belum connected (perlu scan QR)
-- `500` — error internal
+- Personal: `62812xxx@s.whatsapp.net` (atau cukup kirim `62812xxx`, di-normalize otomatis)
+- Group: `1234567890-1234567890@g.us` (harus full JID)

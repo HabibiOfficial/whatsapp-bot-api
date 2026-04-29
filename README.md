@@ -1,240 +1,112 @@
 # WhatsApp Bot API
 
-WhatsApp bot lengkap dengan **dashboard web** dan **REST API** + sistem **API key**.
+Bot WhatsApp (Baileys) + REST API gateway via Vercel + dashboard admin, dengan Postgres shared (Neon) sebagai jembatan.
 
-Stack: **Node.js + Express + Baileys + SQLite** (zero-build, deployable di VPS murah / single VM).
+```
+[ Public client ]
+        │ POST /api/messages/send-text
+        ▼
+┌──────────────────┐         ┌───────────────────────┐
+│  Vercel          │  Neon   │  Bot worker           │
+│  apps/web/       │ ◄──────►│  apps/bot/            │
+│  - landing page  │ Postgres│  - Baileys (WA)       │
+│  - REST API      │         │  - Dashboard admin    │
+│  - API key auth  │         │  - Worker polling DB  │
+└──────────────────┘         └───────────────────────┘
+```
 
----
-
-## Fitur
-
-### Bot
-- Login lewat **QR code** (scan via dashboard, sesi tersimpan di disk)
-- **Command handler** dengan prefix konfigurable (default `!`)
-- **Sticker maker** (gambar/video → stiker, atau stiker → gambar)
-- **Downloader** TikTok (via tikwm.com), placeholder IG/YT yang bisa kamu isi sesuai kebutuhan
-- **Group management**: kick, promote, demote
-- **Auto-reply** rule based (contains / exact / startsWith / regex) — dikelola dari dashboard
-- Reconnect otomatis dengan exponential backoff
-- Semua pesan masuk/keluar dilog ke SQLite
-
-### Dashboard
-- Login admin tunggal (username + password dari `.env`)
-- QR code live untuk pairing
-- Manajemen **API key**: buat, enable/disable, hapus, set rate limit per-key
-- Manajemen **auto-reply rules**
-- Statistik: jumlah pesan masuk/keluar, key aktif, dll
-- Log pesan terbaru
-
-### REST API
-- Otentikasi via header `x-api-key` (atau query `?apikey=`)
-- Rate limit per API key (configurable per key)
-- Endpoints:
-  - `POST /api/messages/send-text` — kirim teks
-  - `POST /api/messages/send-image` — kirim gambar dari URL
-  - `POST /api/messages/send-document` — kirim dokumen dari URL
-  - `POST /api/messages/broadcast` — kirim ke banyak nomor
-  - `GET  /api/messages/check-number` — cek nomor terdaftar di WA
-  - `GET  /api/status/public` — status koneksi (tanpa auth)
-  - `GET  /api/health` — healthcheck
-
-Semua endpoint admin (`/api/keys`, `/api/autoreplies`, `/api/status/*` selain `/public`) butuh login dashboard (cookie `admin_token`).
-
----
+- **`apps/web/`** — di-deploy ke **Vercel**. Public REST API + landing page. Stateless. Menulis `outgoing_messages` ke Postgres.
+- **`apps/bot/`** — di-deploy ke **Pterodactyl/VPS** (proses 24/7). Baileys connection, dashboard admin, worker yang baca `outgoing_messages` dari Postgres dan kirim via WA.
+- **`packages/db/`** — schema Postgres (DDL) + helper migrasi.
 
 ## Quick start
 
+### 1. Siapkan database (Neon)
+
+Bikin akun gratis di https://neon.tech, copy `DATABASE_URL` dari project settings. Lalu jalankan:
+
 ```bash
-# 1. Clone & install
-git clone https://github.com/HabibiOfficial/whatsapp-bot-api.git
-cd whatsapp-bot-api
-npm install
+DATABASE_URL='postgresql://...' node packages/db/migrate.js
+```
 
-# 2. Konfigurasi
+### 2. Deploy `apps/web/` ke Vercel
+
+Lihat [`docs/DEPLOY-VERCEL.md`](docs/DEPLOY-VERCEL.md). TL;DR:
+
+1. Connect repo di https://vercel.com → pilih root **`apps/web`**.
+2. Set env var `DATABASE_URL` (sama persis dengan Neon).
+3. Deploy.
+
+### 3. Deploy `apps/bot/` ke Pterodactyl
+
+Lihat [`docs/DEPLOY-PTERODACTYL.md`](docs/DEPLOY-PTERODACTYL.md). TL;DR:
+
+```bash
+cd apps/bot
 cp .env.example .env
-# edit .env (minimal: ADMIN_PASSWORD dan JWT_SECRET)
-
-# 3. Jalankan
+# isi DATABASE_URL, ADMIN_PASSWORD, JWT_SECRET
+npm install
 npm start
 ```
 
-Buka `http://localhost:3000/dashboard`, login dengan kredensial dari `.env`, lalu **scan QR code** dengan WhatsApp di HP kamu (Settings → Linked Devices → Link a Device).
+Buka `http://server-ip:3000/dashboard`, login admin, scan QR.
 
-Setelah connected, kamu bisa:
-- Buat API key di tab **API Keys**
-- Tes kirim pesan via REST API (lihat contoh di bawah)
+### 4. Buat API key & test
 
----
+Dari dashboard bot → tab "API Keys" → "Buat key baru" → copy key (`wba_xxxxxxxx`).
 
-## Konfigurasi `.env`
-
-| Variable | Default | Keterangan |
-|---|---|---|
-| `PORT` | `3000` | Port server |
-| `HOST` | `0.0.0.0` | Bind address |
-| `ADMIN_USERNAME` | `admin` | Username dashboard |
-| `ADMIN_PASSWORD` | `changeme` | **GANTI sebelum production** |
-| `JWT_SECRET` | — | String random panjang untuk session |
-| `DB_PATH` | `./data.db` | Path SQLite |
-| `SESSION_DIR` | `./auth_info_baileys` | Folder sesi Baileys |
-| `BOT_NAME` | `WinaBot` | Nama bot (muncul di stiker, dll) |
-| `BOT_PREFIX` | `!` | Prefix command |
-| `LOG_LEVEL` | `info` | `trace`/`debug`/`info`/`warn`/`error` |
-
----
-
-## Contoh penggunaan REST API
-
-### Kirim teks
+Test dari terminal:
 
 ```bash
-curl -X POST http://localhost:3000/api/messages/send-text \
-  -H "x-api-key: wba_xxxxxxxxxxxx" \
-  -H "content-type: application/json" \
-  -d '{"to": "6281234567890", "message": "Halo dari API!"}'
+curl -X POST https://YOUR-PROJECT.vercel.app/api/messages/send-text \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: wba_xxxxxxxx" \
+  -d '{"to": "6281234567890", "message": "Halo dari REST API!"}'
 ```
 
-Format `to` boleh:
-- Nomor saja: `"6281234567890"` (otomatis jadi `6281234567890@s.whatsapp.net`)
-- JID lengkap: `"6281234567890@s.whatsapp.net"` atau `"123-456@g.us"` untuk group
+## Fitur
 
-### Kirim gambar
+### Bot (`apps/bot/`)
 
-```bash
-curl -X POST http://localhost:3000/api/messages/send-image \
-  -H "x-api-key: wba_xxxxxxxxxxxx" \
-  -H "content-type: application/json" \
-  -d '{
-    "to": "6281234567890",
-    "url": "https://picsum.photos/600",
-    "caption": "Random image"
-  }'
-```
+- Baileys WA connection (QR pairing, auto-reconnect, session persistent)
+- Dashboard admin: login, scan QR, lihat status, kelola API key & auto-reply, log pesan
+- Command handler: `!menu`, `!ping`, `!info`, `!sticker`, `!toimg`, `!tiktok`, `!ig`, `!yt`, `!kick`, `!promote`, `!demote`
+- Auto-reply rules (contains/exact/startsWith/regex)
+- Worker yang polling `outgoing_messages` → kirim via Baileys → update status di DB
 
-### Broadcast
+### Web / Vercel (`apps/web/`)
 
-```bash
-curl -X POST http://localhost:3000/api/messages/broadcast \
-  -H "x-api-key: wba_xxxxxxxxxxxx" \
-  -H "content-type: application/json" \
-  -d '{
-    "recipients": ["6281111111111", "6282222222222"],
-    "message": "Pengumuman!",
-    "delayMs": 1500
-  }'
-```
+- Public REST API: `send-text`, `send-image`, `send-document`, `broadcast`, `messages/:id`, `health`, `status`
+- API key auth + per-key rate limit (default 60/menit)
+- Landing page + dokumentasi API (`/docs`)
+- Stateless serverless functions
 
-`delayMs` adalah jeda antar nomor (rekomendasi 1000–3000 ms untuk menghindari rate-limit WhatsApp).
+## Env vars
 
-### Cek nomor
+| App | Var | Required | Default | Note |
+|-----|-----|----------|---------|------|
+| both | `DATABASE_URL` | ✓ | — | Neon Postgres connection string |
+| bot | `ADMIN_USERNAME` | ✓ | `admin` | login dashboard |
+| bot | `ADMIN_PASSWORD` | ✓ | `changeme` | login dashboard |
+| bot | `JWT_SECRET` | ✓ | — | random string panjang |
+| bot | `PORT` | — | 3000 | port dashboard |
+| bot | `BOT_NAME` | — | WinaBot | |
+| bot | `BOT_PREFIX` | — | `!` | command prefix |
+| bot | `WORKER_POLL_MS` | — | 1000 | interval polling DB (ms) |
+| bot | `WORKER_BATCH` | — | 10 | jumlah pesan diproses per tick |
+| bot | `SESSION_DIR` | — | `./auth_info_baileys` | folder session Baileys |
 
-```bash
-curl "http://localhost:3000/api/messages/check-number?number=6281234567890" \
-  -H "x-api-key: wba_xxxxxxxxxxxx"
-```
+## Dokumentasi lengkap
 
----
+- [`docs/API.md`](docs/API.md) — referensi REST API
+- [`docs/DEPLOY-NEON.md`](docs/DEPLOY-NEON.md) — setup Postgres
+- [`docs/DEPLOY-VERCEL.md`](docs/DEPLOY-VERCEL.md) — deploy gateway ke Vercel
+- [`docs/DEPLOY-PTERODACTYL.md`](docs/DEPLOY-PTERODACTYL.md) — deploy bot ke Pterodactyl
 
-## Bot commands (default prefix `!`)
+## Disclaimer
 
-| Command | Keterangan |
-|---|---|
-| `!menu` | Menampilkan daftar command |
-| `!ping` | Cek bot hidup |
-| `!info` | Info bot & uptime |
-| `!sticker` | Reply gambar/video → stiker |
-| `!toimg` | Reply stiker → gambar |
-| `!tiktok <url>` | Download video TikTok tanpa watermark |
-| `!ig <url>` | (placeholder — isi sendiri sesuai API yang kamu pakai) |
-| `!yt <url>` | (placeholder — isi sendiri sesuai API yang kamu pakai) |
-| `!kick @user` | Kick user dari group (admin only) |
-| `!promote @user` | Promote ke admin |
-| `!demote @user` | Demote dari admin |
+Baileys adalah library WhatsApp **tidak resmi**. WhatsApp dapat memblokir nomor yang terindikasi spam. Gunakan dengan bijak (jangan kirim pesan massal tanpa izin recipient).
 
----
+## License
 
-## Struktur folder
-
-```
-src/
-├── index.js              # entry point
-├── config.js             # env loader
-├── db.js                 # SQLite + schema
-├── logger.js             # pino logger
-├── bot/
-│   ├── index.js          # Baileys socket lifecycle
-│   ├── handler.js        # incoming message dispatcher
-│   └── commands.js       # command handlers
-├── api/
-│   ├── server.js         # express app
-│   ├── middleware.js     # adminAuth + apiKeyAuth
-│   └── routes/
-│       ├── auth.js
-│       ├── apikeys.js
-│       ├── messages.js
-│       ├── status.js
-│       └── autoreplies.js
-└── public/               # dashboard (HTML/CSS/JS, no build)
-    ├── login.html
-    ├── dashboard.html
-    ├── style.css
-    └── app.js
-```
-
----
-
-## Deployment
-
-### Run as service (systemd)
-
-```ini
-# /etc/systemd/system/whatsapp-bot.service
-[Unit]
-Description=WhatsApp Bot API
-After=network.target
-
-[Service]
-WorkingDirectory=/opt/whatsapp-bot-api
-ExecStart=/usr/bin/node src/index.js
-Restart=always
-User=www-data
-EnvironmentFile=/opt/whatsapp-bot-api/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now whatsapp-bot
-sudo journalctl -u whatsapp-bot -f
-```
-
-### Reverse proxy (nginx)
-
-```nginx
-server {
-  listen 443 ssl http2;
-  server_name bot.example.com;
-
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-  }
-}
-```
-
----
-
-## Catatan & disclaimer
-
-- **Baileys = unofficial library**. WhatsApp bisa memblokir akun yang dianggap spam. Jangan broadcast ke nomor yang tidak punya hubungan dengan kamu, dan kasih jeda yang wajar.
-- **Untuk production / business**, pertimbangkan migrasi ke [WhatsApp Cloud API resmi](https://developers.facebook.com/docs/whatsapp/cloud-api).
-- Sesi Baileys disimpan di folder `auth_info_baileys/` (sudah di-`.gitignore`). Backup folder ini kalau mau migrasi server tanpa scan QR ulang.
-- Database SQLite (`data.db`) menyimpan API key, log pesan, dan auto-reply rules.
-
----
-
-## Lisensi
-
-MIT
+MIT — © HabibiOfficial

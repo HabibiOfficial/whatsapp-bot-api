@@ -5,10 +5,17 @@ const logger = require('../logger');
 const db = require('../db');
 const commands = require('./commands');
 
-const insertLog = db.prepare(
-  `INSERT INTO message_logs (direction, jid, message, type, status)
-   VALUES (?, ?, ?, ?, ?)`,
-);
+async function logMessage(direction, jid, message, type, status, error) {
+  try {
+    await db.query(
+      `INSERT INTO message_logs (direction, jid, message, type, status, error)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [direction, jid, message, type, status, error],
+    );
+  } catch (err) {
+    logger.error({ err: err.message }, 'logMessage failed');
+  }
+}
 
 function extractText(msg) {
   const m = msg.message || {};
@@ -38,7 +45,7 @@ async function onMessages(sock, payload) {
     const text = extractText(msg).trim();
     const type = extractType(msg);
 
-    insertLog.run('in', jid, text, type, 'received');
+    await logMessage('in', jid, text, type, 'received', null);
 
     if (text.startsWith(config.botPrefix)) {
       const without = text.slice(config.botPrefix.length).trim();
@@ -63,39 +70,37 @@ async function onMessages(sock, payload) {
 
 async function maybeAutoReply(sock, jid, text) {
   if (!text) return;
-  const rows = db
-    .prepare('SELECT pattern, response, match_type FROM auto_replies WHERE enabled = 1')
-    .all();
-  const lower = text.toLowerCase();
+  let rules;
+  try {
+    const r = await db.query(
+      'SELECT pattern, response, match_type FROM auto_replies WHERE enabled = TRUE',
+    );
+    rules = r.rows;
+  } catch (err) {
+    logger.error({ err: err.message }, 'autoreply load failed');
+    return;
+  }
 
-  for (const row of rows) {
+  const lower = text.toLowerCase();
+  for (const row of rules) {
     const pattern = row.pattern.toLowerCase();
     let match = false;
     switch (row.match_type) {
-      case 'exact':
-        match = lower === pattern;
-        break;
-      case 'startsWith':
-        match = lower.startsWith(pattern);
-        break;
+      case 'exact': match = lower === pattern; break;
+      case 'startsWith': match = lower.startsWith(pattern); break;
       case 'regex':
-        try {
-          match = new RegExp(row.pattern, 'i').test(text);
-        } catch {
-          match = false;
-        }
+        try { match = new RegExp(row.pattern, 'i').test(text); }
+        catch { match = false; }
         break;
       case 'contains':
-      default:
-        match = lower.includes(pattern);
-        break;
+      default: match = lower.includes(pattern);
     }
     if (match) {
       await sock.sendMessage(jid, { text: row.response });
-      insertLog.run('out', jid, row.response, 'autoreply', 'sent');
+      await logMessage('out', jid, row.response, 'autoreply', 'sent', null);
       return;
     }
   }
 }
 
-module.exports = { onMessages };
+module.exports = { onMessages, logMessage };

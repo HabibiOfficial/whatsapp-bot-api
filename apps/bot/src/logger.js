@@ -5,10 +5,7 @@ const config = require('./config');
 
 const logger = pino({
   level: config.logLevel,
-  transport: {
-    target: 'pino/file',
-    options: { destination: 1 },
-  },
+  transport: { target: 'pino/file', options: { destination: 1 } },
 });
 
 module.exports = logger;

@@ -1,7 +1,6 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -14,6 +13,7 @@ const QRCode = require('qrcode');
 
 const config = require('../config');
 const logger = require('../logger');
+const db = require('../db');
 const handler = require('./handler');
 
 const state = {
@@ -26,14 +26,30 @@ const state = {
   reconnectAttempts: 0,
 };
 
+async function syncState() {
+  try {
+    await db.query(
+      `UPDATE bot_state SET status=$1, user_jid=$2, user_name=$3, qr_data_url=$4,
+         started_at=$5, updated_at=NOW() WHERE id=1`,
+      [
+        state.status,
+        state.user?.id || null,
+        state.user?.name || null,
+        state.qrDataUrl,
+        state.startedAt,
+      ],
+    );
+  } catch (err) {
+    logger.error({ err: err.message }, 'syncState failed');
+  }
+}
+
 async function start() {
   if (!fs.existsSync(config.sessionDir)) {
     fs.mkdirSync(config.sessionDir, { recursive: true });
   }
 
-  const { state: authState, saveCreds } = await useMultiFileAuthState(
-    config.sessionDir,
-  );
+  const { state: authState, saveCreds } = await useMultiFileAuthState(config.sessionDir);
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -48,6 +64,7 @@ async function start() {
 
   state.sock = sock;
   state.status = 'connecting';
+  await syncState();
 
   sock.ev.on('creds.update', saveCreds);
 
@@ -62,7 +79,8 @@ async function start() {
         logger.error({ err }, 'failed rendering QR code');
       }
       state.status = 'qr';
-      logger.info('QR code generated, scan via dashboard');
+      await syncState();
+      logger.info('QR code generated');
     }
 
     if (connection === 'open') {
@@ -72,6 +90,7 @@ async function start() {
       state.user = sock.user;
       state.startedAt = new Date().toISOString();
       state.reconnectAttempts = 0;
+      await syncState();
       logger.info({ user: sock.user?.id }, 'WhatsApp connected');
     }
 
@@ -80,6 +99,7 @@ async function start() {
       const loggedOut = code === DisconnectReason.loggedOut;
       state.status = loggedOut ? 'logged_out' : 'disconnected';
       state.user = null;
+      await syncState();
       logger.warn({ code, loggedOut }, 'WhatsApp connection closed');
 
       if (loggedOut) {
@@ -111,9 +131,7 @@ async function start() {
 function getState() {
   return {
     status: state.status,
-    user: state.user
-      ? { id: state.user.id, name: state.user.name }
-      : null,
+    user: state.user ? { id: state.user.id, name: state.user.name } : null,
     qrDataUrl: state.qrDataUrl,
     startedAt: state.startedAt,
   };
@@ -125,11 +143,8 @@ function getSocket() {
 
 async function logout() {
   if (state.sock) {
-    try {
-      await state.sock.logout();
-    } catch (err) {
-      logger.error({ err }, 'logout error');
-    }
+    try { await state.sock.logout(); }
+    catch (err) { logger.error({ err }, 'logout error'); }
   }
   try {
     fs.rmSync(config.sessionDir, { recursive: true, force: true });
@@ -141,6 +156,7 @@ async function logout() {
   state.user = null;
   state.qr = null;
   state.qrDataUrl = null;
+  await syncState();
 }
 
-module.exports = { start, getState, getSocket, logout, _path: path };
+module.exports = { start, getState, getSocket, logout };

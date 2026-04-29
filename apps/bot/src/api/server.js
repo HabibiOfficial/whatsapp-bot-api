@@ -9,7 +9,6 @@ const logger = require('../logger');
 
 const authRoutes = require('./routes/auth');
 const apiKeyRoutes = require('./routes/apikeys');
-const messageRoutes = require('./routes/messages');
 const statusRoutes = require('./routes/status');
 const autoreplyRoutes = require('./routes/autoreplies');
 
@@ -27,7 +26,6 @@ function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api/keys', apiKeyRoutes);
-  app.use('/api/messages', messageRoutes);
   app.use('/api/status', statusRoutes);
   app.use('/api/autoreplies', autoreplyRoutes);
 

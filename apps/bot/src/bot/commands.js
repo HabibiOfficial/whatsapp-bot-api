@@ -8,14 +8,17 @@ const config = require('../config');
 const logger = require('../logger');
 const db = require('../db');
 
-const insertLog = db.prepare(
-  `INSERT INTO message_logs (direction, jid, message, type, status)
-   VALUES (?, ?, ?, ?, ?)`,
-);
+function logOut(jid, summary, type) {
+  db.query(
+    `INSERT INTO message_logs (direction, jid, message, type, status)
+     VALUES ('out', $1, $2, $3, 'sent')`,
+    [jid, summary, type],
+  ).catch((err) => logger.error({ err: err.message }, 'log insert failed'));
+}
 
 async function reply(sock, jid, content, originalMsg) {
   await sock.sendMessage(jid, content, { quoted: originalMsg });
-  insertLog.run('out', jid, JSON.stringify(content).slice(0, 200), 'reply', 'sent');
+  logOut(jid, JSON.stringify(content).slice(0, 200), 'reply');
 }
 
 const menuText = ({ name, prefix }) => `╭─❒ *${name}* ❒
@@ -77,7 +80,7 @@ const commands = {
     });
     const out = await sticker.toBuffer();
     await sock.sendMessage(jid, { sticker: out }, { quoted: msg });
-    insertLog.run('out', jid, '[sticker]', 'sticker', 'sent');
+    logOut(jid, '[sticker]', 'sticker');
   },
 
   async toimg({ sock, msg, jid }) {
@@ -91,7 +94,7 @@ const commands = {
     };
     const buffer = await downloadMediaMessage(target, 'buffer', {});
     await sock.sendMessage(jid, { image: buffer }, { quoted: msg });
-    insertLog.run('out', jid, '[image]', 'image', 'sent');
+    logOut(jid, '[image]', 'image');
   },
 
   async tiktok({ sock, msg, jid, args }) {

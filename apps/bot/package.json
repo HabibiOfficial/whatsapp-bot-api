@@ -1,0 +1,36 @@
+{
+  "name": "@whatsapp-bot-api/bot",
+  "version": "1.0.0",
+  "description": "WhatsApp bot worker (Baileys) + admin dashboard. Runs on Pterodactyl/VPS.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "lint": "eslint src/",
+    "migrate": "node ../../packages/db/migrate.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": "HabibiOfficial",
+  "license": "MIT",
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whatsapp-bot-api/db": "*",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.7.9",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4",
+    "uuid": "^11.0.5",
+    "wa-sticker-formatter": "^4.4.4"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0"
+  }
+}
